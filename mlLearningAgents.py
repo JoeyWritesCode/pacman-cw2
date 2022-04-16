@@ -26,6 +26,7 @@ from __future__ import absolute_import
 from __future__ import print_function
 
 import random
+from re import sub
 
 from pacman import Directions, GameState
 from pacman_utils.game import Agent
@@ -48,7 +49,11 @@ class GameStateFeatures:
         """
 
         "*** YOUR CODE HERE ***"
-        util.raiseNotDefined()
+
+        self.state = state
+
+    def getLegalActions(self):
+        return self.state.getLegalPacmanActions()
 
 
 class QLearnAgent(Agent):
@@ -81,6 +86,8 @@ class QLearnAgent(Agent):
         self.numTraining = int(numTraining)
         # Count the number of games we have played
         self.episodesSoFar = 0
+        # A frequency table of Q values
+        self.qFrequency = {}
 
     # Accessor functions for the variable episodesSoFar controlling learning
     def incrementEpisodesSoFar(self):
@@ -138,6 +145,9 @@ class QLearnAgent(Agent):
             Q(state, action)
         """
         "*** YOUR CODE HERE ***"
+        # increment the value (with a default of 0 if the pair does not exist) 
+        self.qFrequency[(state, action)] = self.qFrequency.get((state, action), 0) + 1
+        return self.qFrequency[(state, action)]
         util.raiseNotDefined()
 
     # WARNING: You will be tested on the functionality of this method
@@ -151,7 +161,21 @@ class QLearnAgent(Agent):
             q_value: the maximum estimated Q-value attainable from the state
         """
         "*** YOUR CODE HERE ***"
+        subsequentQs = [0] # a default value of 0
+        for action in state.getLegalActions():
+            subseqent_q = self.getQValue(state, action)
+            subsequentQs.append(subseqent_q)
+        return max(subsequentQs)
         util.raiseNotDefined()
+
+    def updateQ(self,
+                previous_state: GameStateFeatures, 
+                action: Directions, 
+                reward: float):
+        q_value = self.qFrequency([previous_state, action])
+        # right?
+        self.qFrequency[previous_state, action] = q_value + self.getAlpha() * (reward + self.getGamma() * self.maxQValue(previous_state) - q_value)
+
 
     # WARNING: You will be tested on the functionality of this method
     # DO NOT change the function signature
