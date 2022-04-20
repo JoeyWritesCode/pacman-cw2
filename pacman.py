@@ -727,7 +727,9 @@ if __name__ == '__main__':
 
     > python pacman.py --help
     """
-    args = readCommand(sys.argv[1:])  # Get game components based on input
+    # teehee
+    args = readCommand(['-p', 'QLearnAgent', '-x', '1000', '-n', '1010', '-l', 'smallGrid'])
+    #args = readCommand(sys.argv[1:])  # Get game components based on input
     runGames(**args)
 
     # import cProfile

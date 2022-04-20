@@ -5,7 +5,7 @@
       "name": "Python: Module",
       "type": "python",
       "request": "launch",
-      "module": "getAction",
+      "module": "python",
       "justMyCode": true
     },
     {
@@ -14,7 +14,6 @@
       "request": "launch",
       "program": "${file}",
       "console": "integratedTerminal",
-      "preLaunchTask": "Run_5_epsiodes",
       "justMyCode": true
     }
   ]

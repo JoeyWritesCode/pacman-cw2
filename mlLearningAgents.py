@@ -63,6 +63,10 @@ class GameStateFeatures:
     def setTerminal(self):
         self.isTerminal = True
 
+    def updateScore(self, new_score):
+        self.score = new_score
+
+
 class QValueTable:
     def __init__(self):
         self.data = {}
@@ -71,8 +75,8 @@ class QValueTable:
     def __getitem__(self, key):
         return self.data.get(key, 0)
 
-    def __setitem__(self, state, action, value):
-        self.data[(state, action)] = value
+    def __setitem__(self, key, value):
+        self.data[key] = value
 
     def getCount(self, key):
         return self.frequencies.get(key, 0)
@@ -94,7 +98,7 @@ class QValueTable:
         values_for_actions = {}
         for action in legal_actions:
             values_for_actions[self[(state, action)]] = action
-        q_max = max(values_for_actions.keys)
+        q_max = max(values_for_actions.keys())
         return values_for_actions[q_max]
 
 
@@ -141,13 +145,11 @@ class QLearnAgent(Agent):
         # A table of Q values associated to state-action pairs
         self.qValueTable = QValueTable()
         # The last state visited, and the last action. Used for the update
-        self.lastState = None
-        self.lastAction = None
-        self.lastReward = 0.0
-        # Our optimisitic reward (is this how you do it?)
-        self.optimisticReward = 2.0
+        self.state = None
+        self.action = None
         self.score = 0
-        self.q_value = util.Counter()
+        # Our optimisitic reward (is this how you do it?)
+        self.explorationBonus = 2.0
 
     # Accessor functions for the variable episodesSoFar controlling learning
     def incrementEpisodesSoFar(self):
@@ -300,15 +302,9 @@ class QLearnAgent(Agent):
         Returns:
             The exploration value
         """
-        if (counts < self.maxAttempts) and self.getEpsilon() != 0:
-            print("optimistic")
-            return self.optimisticReward
+        if (counts < self.maxAttempts):
+            return self.score + self.explorationBonus
         else:
-            distance0 = self.state.getPacmanPosition()[0]- self.state.getGhostPosition(1)[0]
-            distance1 = self.state.getPacmanPosition()[1]- self.state.getGhostPosition(1)[1]
-            if math.sqrt(distance0**2 + distance1**2) > 2:
-                if (Directions.REVERSE[self.lastAction] in legal) and len(legal)>1:
-                    legal.remove(Directions.REVERSE[last_action])
             return utility
 
     def epislonGreedy(self,
@@ -322,10 +318,14 @@ class QLearnAgent(Agent):
         Returns:
             The action to take
         """
+        legal = state.getLegalPacmanActions()
+        if Directions.STOP in legal:
+            legal.remove(Directions.STOP)
+
         if random.uniform(0, 1) < self.getEpsilon():
-            return random.choice(state.getLegalActions())
+            return random.choice(legal)
         else:
-            return self.qValueTable.getBestAction(state)
+            return self.qValueTable.getBestAction(state, legal)
             
 
     # WARNING: You will be tested on the functionality of this method
@@ -354,27 +354,26 @@ class QLearnAgent(Agent):
         print(state.getFood())
         print("Score: ", state.getScore()) """
 
-        stateFeatures = GameStateFeatures(state)
-        legal = stateFeatures.getLegalActions()
+        #stateFeatures = GameStateFeatures(state)
 
         # Now pick what action to take.
         # The current code shows how to do that but just makes the choice randomly.
-        if Directions.STOP in legal:
-            legal.remove(Directions.STOP)
-
-        # Update reward
-        reward = self.computeReward(self.lastState, state)
-
-        # update Q-value
-        self.learn(self.lastState, self.lastAction, reward, state)
 
         # Epsilon greedy policy
         action = self.epislonGreedy(state)
+        print(action)
 
-        self.score = state.getScore()
-        self.lastState = state
-        self.lastAction = action
+        if self.state != None and self.action != None:
+            # Update reward
+            self.score = self.computeReward(self.state, state)
+            # update Q-value
+            self.learn(self.state, self.action, self.score, state)
 
+        # update counts
+        self.qValueTable.updateCount((state, action))
+
+        self.state = state
+        self.action = action
         return action
 
     def final(self, state: GameState):
@@ -389,21 +388,21 @@ class QLearnAgent(Agent):
 
         # update Q-values
         """ reward = state.getScore()-self.lastReward
-        self.lastState = self.lastState[-1]
+        self.state = self.state[-1]
         last_action = self.lastAction[-1]
-        self.updateQ(last_state, last_action, reward, state) """
+        self.updateQ(state, last_action, reward, state) """
         
         stateFeatures = GameStateFeatures(state)
         stateFeatures.setTerminal()
 
         # update Q-values
-        reward = self.computeReward(self.lastState, state)
-        self.learn(self.lastState, self.lastAction, reward, state)
+        self.score = self.computeReward(self.state, state)
+        self.learn(self.state, self.action, self.score, state)
 
         # reset attributes
         self.score = 0
-        self.lastState = None
-        self.lastAction = None
+        self.state = None
+        self.action = None
 
         # decrease epsilon during the trianing
         ep = 1 - self.getEpisodesSoFar()*1.0/self.getNumTraining()
