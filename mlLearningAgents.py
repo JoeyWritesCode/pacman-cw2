@@ -66,6 +66,16 @@ class GameStateFeatures:
     def updateScore(self, new_score):
         self.score = new_score
 
+    def getGoodActions(self):
+        legal = self.state.getLegalActions()
+        
+        if Directions.STOP in legal:
+            legal.remove(Directions.STOP)
+
+        return legal
+
+        
+
 
 
 class QValueTable:
@@ -119,7 +129,7 @@ class QLearnAgent(Agent):
                  alpha: float = 0.2,
                  epsilon: float = 0.05,
                  gamma: float = 0.8,
-                 maxAttempts: int = 30,
+                 maxAttempts: int = 5,
                  numTraining: int = 10):
         """
         These values are either passed from the command line (using -a alpha=0.5,...)
@@ -253,7 +263,8 @@ class QLearnAgent(Agent):
         """
         initalQValue = self.getQValue(state, action)
         qMax = self.maxQValue(nextState)
-        self.qValueTable[(state,action)] = initalQValue + self.getAlpha() * (reward + self.getGamma() * qMax - initalQValue)
+        self.qValueTable[(state,action)] = initalQValue + self.getAlpha() * \
+        (reward + self.getGamma() * qMax - initalQValue)
      
 
     # WARNING: You will be tested on the functionality of this method
@@ -319,15 +330,16 @@ class QLearnAgent(Agent):
 
         Returns:
             The action to take
-        """
-        legal = state.getLegalPacmanActions()
-        if Directions.STOP in legal:
-            legal.remove(Directions.STOP)        
+        """   
+        stateFeatures = GameStateFeatures(state)
 
         if random.uniform(0, 1) < self.getEpsilon():
-            return random.choice(legal)
+            return random.choice(stateFeatures.getGoodActions())
         else:
-            return self.qValueTable.getBestAction(state, legal)
+            tmp = util.Counter()
+            for action in stateFeatures.getGoodActions():
+                tmp[action] = self.getQValue(state, action)     
+            return tmp.argMax()
             
 
     # WARNING: You will be tested on the functionality of this method
@@ -363,7 +375,6 @@ class QLearnAgent(Agent):
 
         # Epsilon greedy policy
         action = self.epislonGreedy(state)
-        print(action)
 
         if self.state != None and self.action != None:
             # Update reward
@@ -401,7 +412,9 @@ class QLearnAgent(Agent):
 
         # update Q-values
         self.score = self.computeReward(self.state, state)
+        self.score += self.explorationFn(self.score, self.getCount(self.state, self.action))
         self.learn(self.state, self.action, self.score, state)
+
 
         # reset attributes
         self.score = 0
