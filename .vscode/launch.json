@@ -9,10 +9,10 @@
       "justMyCode": true
     },
     {
-      "name": "Python: Current File",
+      "name": "Python: Run Pacman Game",
       "type": "python",
       "request": "launch",
-      "program": "${file}",
+      "program": "pacman.py",
       "console": "integratedTerminal",
       "justMyCode": true
     }
