@@ -32,6 +32,8 @@ from numpy import number
 
 import math
 
+from sqlalchemy import true
+
 from pacman import Directions, GameState
 from pacman_utils.game import Agent
 from pacman_utils import util
@@ -160,8 +162,9 @@ class QLearnAgent(Agent):
         self.action = None
         self.score = 0
         # Our optimisitic reward (is this how you do it?)
-        self.explorationBonus = 2.0
-        self.beta = 10.0
+        self.beta = 5.0
+        self.wins = 0
+        self.loses = 0
 
     # Accessor functions for the variable episodesSoFar controlling learning
     def incrementEpisodesSoFar(self):
@@ -205,6 +208,7 @@ class QLearnAgent(Agent):
         Returns:
             The reward assigned for the given trajectory
         """
+        #print("Reward : ", endState.getScore() - startState.getScore())
         return endState.getScore() - startState.getScore()
 
     # WARNING: You will be tested on the functionality of this method
@@ -262,9 +266,13 @@ class QLearnAgent(Agent):
             reward: the reward received on this trajectory
         """
         initalQValue = self.getQValue(state, action)
-        qMax = self.maxQValue(nextState)
+        if (nextState.isTerminal()):
+            qMax = 0
+        else:
+            qMax = self.maxQValue(nextState)
         self.qValueTable[(state,action)] = initalQValue + self.getAlpha() * \
         (reward + self.getGamma() * qMax - initalQValue)
+        #print(self.qValueTable[(state, action)])
      
 
     # WARNING: You will be tested on the functionality of this method
@@ -320,6 +328,16 @@ class QLearnAgent(Agent):
         else:
             return 0
 
+    def argMax(self, dict):
+        """
+        Returns the key with the highest value.
+        """
+        if len(list(dict.keys())) == 0: return None
+        all_items = list(dict.items())
+        values = [x[1] for x in all_items]
+        maxIndex = values.index(max(values))
+        return all_items[maxIndex][0]
+
     def epislonGreedy(self,
                       state: GameState) -> Directions:
         """
@@ -331,15 +349,21 @@ class QLearnAgent(Agent):
         Returns:
             The action to take
         """   
-        stateFeatures = GameStateFeatures(state)
 
-        if random.uniform(0, 1) < self.getEpsilon():
-            return random.choice(stateFeatures.getGoodActions())
+        if random.uniform(0, 1) < self.epsilon:
+            return random.choice(state.getLegalPacmanActions())
         else:
-            tmp = util.Counter()
-            for action in stateFeatures.getGoodActions():
-                tmp[action] = self.getQValue(state, action)     
-            return tmp.argMax()
+            tmp = {}
+            for action in state.getLegalPacmanActions():
+                tmp[action] = self.getQValue(state, action)   
+            
+            distance0 = state.getPacmanPosition()[0]- state.getGhostPosition(1)[0]
+            distance1 = state.getPacmanPosition()[1]- state.getGhostPosition(1)[1]
+            if math.sqrt(distance0**2 + distance1**2) > 2 and self.action != None:
+                if len(tmp)>1:
+                    tmp.pop(Directions.REVERSE[self.action], None)         
+                    
+            return self.argMax(tmp)
             
 
     # WARNING: You will be tested on the functionality of this method
@@ -380,7 +404,7 @@ class QLearnAgent(Agent):
             # Update reward
             self.score = self.computeReward(self.state, state)
             # Ammend with exploration function
-            self.score += self.explorationFn(self.score, self.getCount(self.state, self.action))
+            #self.score += self.explorationFn(self.score, self.getCount(self.state, self.action))
             # update Q-value
             self.learn(self.state, self.action, self.score, state)
 
@@ -400,26 +424,435 @@ class QLearnAgent(Agent):
             state: the final game state
         """
         print(f"Game {self.getEpisodesSoFar()} just ended!")
-
-        # update Q-values
-        """ reward = state.getScore()-self.lastReward
-        self.state = self.state[-1]
-        last_action = self.lastAction[-1]
-        self.updateQ(state, last_action, reward, state) """
         
-        stateFeatures = GameStateFeatures(state)
-        stateFeatures.setTerminal()
+        if (state.isLose()):
+            self.loses += 1
+        else:
+            self.wins += 1
+        """ stateFeatures = GameStateFeatures(state)
+        stateFeatures.setTerminal() """
 
         # update Q-values
         self.score = self.computeReward(self.state, state)
-        self.score += self.explorationFn(self.score, self.getCount(self.state, self.action))
         self.learn(self.state, self.action, self.score, state)
 
-
-        # reset attributes
         self.score = 0
         self.state = None
         self.action = None
+
+        # Keep track of the number of games played, and set learning
+        # parameters to zero when we are done with the pre-set number
+        # of training episodes
+        self.incrementEpisodesSoFar()
+
+        if self.getEpisodesSoFar() == self.getNumTraining():
+            msg = 'Training Done (turning off epsilon and alpha)'
+            print('%s\n%s' % (msg,'-' * len(msg)))
+            success_rate = self.wins / (self.wins + self.loses)
+            print("Success rate : %f" % success_rate)
+            self.setAlpha(0)
+            self.setEpsilon(0)
+        else:
+            new_epsilon = self.getEpsilon() * (1 - self.getEpisodesSoFar() / self.getNumTraining())
+            self.setEpsilon(new_epsilon)
+
+class OtherAgent(Agent):
+
+    # Constructor, called when we start running the
+    def __init__(self, alpha=0.2, epsilon=0.05, gamma=0.8, numTraining = 10):
+        # alpha       - learning rate
+        # epsilon     - exploration rate
+        # gamma       - discount factor
+        # numTraining - number of training episodes
+        #
+        # These values are either passed from the command line or are
+        # set to the default values above. We need to create and set
+        # variables for them
+        self.alpha = float(alpha)
+        self.epsilon = float(epsilon)
+        self.gamma = float(gamma)
+        self.numTraining = int(numTraining)
+        # Count the number of games we have played
+        self.episodesSoFar = 0
+        # Q-values
+        self.q_value = util.Counter()
+        # current score
+        self.score = 0
+        # last state
+        self.lastState = []
+        # last action
+        self.lastAction = []
+
+
+
+    # Accessor functions for the variable episodesSoFars controlling learning
+    def incrementEpisodesSoFar(self):
+        self.episodesSoFar +=1
+
+    def getEpisodesSoFar(self):
+        return self.episodesSoFar
+
+    def getNumTraining(self):
+            return self.numTraining
+
+    # Accessor functions for parameters
+    def setEpsilon(self, value):
+        self.epsilon = value
+
+    def getAlpha(self):
+        return self.alpha
+
+    def setAlpha(self, value):
+        self.alpha = value
+
+    def getGamma(self):
+        return self.gamma
+
+    def getMaxAttempts(self):
+        return self.maxAttempts
+
+    # functions for calculation
+    # get Q(s,a)
+    def getQValue(self,
+                  state: GameStateFeatures,
+                  action: Directions) -> float:
+        """
+        Args:
+            state: A given state
+            action: Proposed action to take
+
+        Returns:
+            Q(state, action)
+        """
+        # If the state-action pair has not been seen before, initialise with 0
+        return self.q_value[(state, action)]
+        util.raiseNotDefined()
+        
+
+    # WARNING: You will be tested on the functionality of this method
+    # DO NOT change the function signature
+    def maxQValue(self, state: GameStateFeatures) -> float:
+        """
+        Args:
+            state: The given state
+
+        Returns:
+            q_value: the maximum estimated Q-value attainable from the state
+        """
+            
+        subsequentQs = [] # a default value of 0
+        for action in state.getLegalActions():
+            subseqent_q = self.getQValue(state, action)
+            subsequentQs.append(subseqent_q)
+        if len(subsequentQs) == 0:
+            return 0
+        return max(subsequentQs)
+
+
+    # WARNING: You will be tested on the functionality of this method
+    # DO NOT change the function signature
+    def learn(self,
+              state: GameStateFeatures,
+              action: Directions,
+              reward: float,
+              nextState: GameStateFeatures):
+        """
+        Performs a Q-learning update
+
+        Args:
+            state: the initial state
+            action: the action that was took
+            nextState: the resulting state
+            reward: the reward received on this trajectory
+        """
+        if (nextState.isTerminal):
+            qmax = 0
+        else:
+            qmax = self.maxQValue(nextState.state)
+        q = self.getQValue(state.state,action)
+        self.q_value[(state.state,action)] = q + self.alpha*(reward + self.gamma*qmax - q)
+        #print(self.qValueTable[(state, action)])
+
+    def updateQ(self, state, action, reward, qmax):
+        q = self.getQValue(state,action)
+        self.q_value[(state,action)] = q + self.alpha*(reward + self.gamma*qmax - q)
+
+    # return the action maximises Q of state
+    def doTheRightThing(self, state):
+        legal = state.getLegalPacmanActions()
+        # in the first half of trianing, the agent is forced not to stop
+        # or turn back while not being chased by the ghost
+        if self.getEpisodesSoFar()*1.0/self.getNumTraining()<0.5:
+            if Directions.STOP in legal:
+                legal.remove(Directions.STOP)
+            if len(self.lastAction) > 0:
+                last_action = self.lastAction[-1]
+                distance0 = state.getPacmanPosition()[0]- state.getGhostPosition(1)[0]
+                distance1 = state.getPacmanPosition()[1]- state.getGhostPosition(1)[1]
+                if math.sqrt(distance0**2 + distance1**2) > 2:
+                    if (Directions.REVERSE[last_action] in legal) and len(legal)>1:
+                        legal.remove(Directions.REVERSE[last_action])
+        tmp = util.Counter()
+        for action in legal:
+          tmp[action] = self.getQValue(state, action)
+        return tmp.argMax()
+
+    def argMax(self, dict):
+        """
+        Returns the key with the highest value.
+        """
+        if len(list(dict.keys())) == 0: return None
+        all_items = list(dict.items())
+        values = [x[1] for x in all_items]
+        maxIndex = values.index(max(values))
+        return all_items[maxIndex][0]
+
+    def epislonGreedy(self,
+                      state: GameState) -> Directions:
+        """
+        Use an epsilon-greedy policy to select an action
+
+        Args:
+            state: the current state
+
+        Returns:
+            The action to take
+        """   
+
+        if random.uniform(0, 1) < self.epsilon:
+            return random.choice(state.getLegalPacmanActions())
+        else:
+            tmp = {}
+            for action in state.getLegalPacmanActions():
+                tmp[action] = self.getQValue(state, action)   
+            
+            distance0 = state.getPacmanPosition()[0]- state.getGhostPosition(1)[0]
+            distance1 = state.getPacmanPosition()[1]- state.getGhostPosition(1)[1]
+            if math.sqrt(distance0**2 + distance1**2) > 2 and len(self.lastAction) > 0:
+                if len(tmp)>1:
+                    tmp.pop(Directions.REVERSE[self.lastAction[-1]], None)         
+                    
+            return self.argMax(tmp)
+
+    # getAction
+    #
+    # The main method required by the game. Called every time that
+    # Pacman is expected to move
+    def getAction(self, state):
+
+        # The data we have about the state of the game
+        # the legal action of this state
+        features = GameStateFeatures(state)
+        
+        legal = state.getLegalPacmanActions()
+        if Directions.STOP in legal:
+            legal.remove(Directions.STOP)
+
+        # update Q-value
+        reward = state.getScore()-self.score
+        if len(self.lastState) > 0:
+            last_features = self.lastState[-1]
+            last_action = self.lastAction[-1]
+            self.learn(last_features, last_action, reward, features)
+            """ max_q = self.maxQValue(state)
+            self.updateQ(last_state, last_action, reward, max_q) """
+
+        # e-greedy
+        if util.flipCoin(self.epsilon):
+            action =  random.choice(legal)
+        else:
+            action =  self.epislonGreedy(state)
+
+        # update attributes
+        self.score = state.getScore()
+        self.lastState.append(features)
+        self.lastAction.append(action)
+
+        return action
+
+    # Handle the end of episodes
+    #
+    # This is called by the game after a win or a loss.
+    def final(self, state):
+
+        features = GameStateFeatures(state)
+        features.isTerminal = True
+        # update Q-values
+        reward = state.getScore()-self.score
+        last_state = self.lastState[-1]
+        last_action = self.lastAction[-1]
+
+        self.learn(last_state, last_action, reward, features)
+        #self.updateQ(last_state, last_action, reward, 0)
+
+        # reset attributes
+        self.score = 0
+        self.lastState = []
+        self.lastAction = []
+        
+        #stateFeatures.isTerminal = False
+
+        # decrease epsilon during the trianing
+        ep = 1 - self.getEpisodesSoFar()*1.0/self.getNumTraining()
+        self.setEpsilon(ep*0.1)
+
+
+        # Keep track of the number of games played, and set learning
+        # parameters to zero when we are done with the pre-set number
+        # of training episodes
+        self.incrementEpisodesSoFar()
+        if self.getEpisodesSoFar() % 100 == 0:
+            print("Completed %s runs of training" % self.getEpisodesSoFar())
+
+        if self.getEpisodesSoFar() == self.getNumTraining():
+            msg = 'Training Done (turning off epsilon and alpha)'
+            print('%s\n%s' % (msg,'-' * len(msg)))
+            self.setAlpha(0)
+            self.setEpsilon(0)
+
+class UntouchedAgent(Agent):
+
+    # Constructor, called when we start running the
+    def __init__(self, alpha=0.2, epsilon=0.05, gamma=0.8, numTraining = 10):
+        # alpha       - learning rate
+        # epsilon     - exploration rate
+        # gamma       - discount factor
+        # numTraining - number of training episodes
+        #
+        # These values are either passed from the command line or are
+        # set to the default values above. We need to create and set
+        # variables for them
+        self.alpha = float(alpha)
+        self.epsilon = float(epsilon)
+        self.gamma = float(gamma)
+        self.numTraining = int(numTraining)
+        # Count the number of games we have played
+        self.episodesSoFar = 0
+        # Q-values
+        self.q_value = util.Counter()
+        # current score
+        self.score = 0
+        # last state
+        self.lastState = []
+        # last action
+        self.lastAction = []
+
+
+
+    # Accessor functions for the variable episodesSoFars controlling learning
+    def incrementEpisodesSoFar(self):
+        self.episodesSoFar +=1
+
+    def getEpisodesSoFar(self):
+        return self.episodesSoFar
+
+    def getNumTraining(self):
+            return self.numTraining
+
+    # Accessor functions for parameters
+    def setEpsilon(self, value):
+        self.epsilon = value
+
+    def getAlpha(self):
+        return self.alpha
+
+    def setAlpha(self, value):
+        self.alpha = value
+
+    def getGamma(self):
+        return self.gamma
+
+    def getMaxAttempts(self):
+        return self.maxAttempts
+
+    # functions for calculation
+    # get Q(s,a)
+    def getQValue(self, state, action):
+        return self.q_value[(state,action)]
+
+    # return the maximum Q of state
+    def getMaxQ(self, state):
+        q_list = []
+        for a in state.getLegalPacmanActions():
+            q = self.getQValue(state,a)
+            q_list.append(q)
+        if len(q_list) ==0:
+            return 0
+        return max(q_list)
+
+    # update Q value
+    def updateQ(self, state, action, reward, qmax):
+        q = self.getQValue(state,action)
+        self.q_value[(state,action)] = q + self.alpha*(reward + self.gamma*qmax - q)
+
+    # return the action maximises Q of state
+    def doTheRightThing(self, state):
+        legal = state.getLegalPacmanActions()
+        # in the first half of trianing, the agent is forced not to stop
+        # or turn back while not being chased by the ghost
+        if self.getEpisodesSoFar()*1.0/self.getNumTraining()<0.5:
+            if Directions.STOP in legal:
+                legal.remove(Directions.STOP)
+            if len(self.lastAction) > 0:
+                last_action = self.lastAction[-1]
+                distance0 = state.getPacmanPosition()[0]- state.getGhostPosition(1)[0]
+                distance1 = state.getPacmanPosition()[1]- state.getGhostPosition(1)[1]
+                if math.sqrt(distance0**2 + distance1**2) > 2:
+                    if (Directions.REVERSE[last_action] in legal) and len(legal)>1:
+                        legal.remove(Directions.REVERSE[last_action])
+        tmp = util.Counter()
+        for action in legal:
+          tmp[action] = self.getQValue(state, action)
+        return tmp.argMax()
+
+    # getAction
+    #
+    # The main method required by the game. Called every time that
+    # Pacman is expected to move
+    def getAction(self, state):
+
+        # The data we have about the state of the game
+        # the legal action of this state
+        legal = state.getLegalPacmanActions()
+        if Directions.STOP in legal:
+            legal.remove(Directions.STOP)
+
+        # update Q-value
+        reward = state.getScore()-self.score
+        if len(self.lastState) > 0:
+            last_state = self.lastState[-1]
+            last_action = self.lastAction[-1]
+            max_q = self.getMaxQ(state)
+            self.updateQ(last_state, last_action, reward, max_q)
+
+        # e-greedy
+        if util.flipCoin(self.epsilon):
+            action =  random.choice(legal)
+        else:
+            action =  self.doTheRightThing(state)
+
+        # update attributes
+        self.score = state.getScore()
+        self.lastState.append(state)
+        self.lastAction.append(action)
+
+        return action
+
+    # Handle the end of episodes
+    #
+    # This is called by the game after a win or a loss.
+    def final(self, state):
+
+        # update Q-values
+        reward = state.getScore()-self.score
+        last_state = self.lastState[-1]
+        last_action = self.lastAction[-1]
+        self.updateQ(last_state, last_action, reward, 0)
+
+        # reset attributes
+        self.score = 0
+        self.lastState = []
+        self.lastAction = []
 
         # decrease epsilon during the trianing
         ep = 1 - self.getEpisodesSoFar()*1.0/self.getNumTraining()
